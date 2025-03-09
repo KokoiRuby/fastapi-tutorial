@@ -1,0 +1,24 @@
+services:
+  # service name
+  app:
+    build:
+      context: ./..
+      dockerfile: ./docker/Dockerfile
+    ports:
+      - "8000:8000"
+    # map src to container
+    volumes:
+      - ./../:/app
+    environment:
+      - APP_ENV=local
+    healthcheck:
+      test: "curl -f http://localhost:8000/heartbeat/readiness || exit 1"
+      interval: 20s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fastapi-network
+
+networks:
+  fastapi-network:
+    driver: bridge

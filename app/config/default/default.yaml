@@ -1,0 +1,5 @@
+app:
+  title: "Post Management Service API"
+  description: "API to manage posts"
+  version: "0.0.1"
+  reload: true
