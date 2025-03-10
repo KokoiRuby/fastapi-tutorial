@@ -1932,7 +1932,139 @@ def to_user_view_model(user: UserModel) -> User:
 
 ```
 
+### MySQL
 
+```bash
+.
+├── Makefile
+...
+├── docker
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── mysql # 👈
+│   │   ├── Dockerfile
+│   │   └── fixtures
+│   │       └── schema.sql
+│   └── postgres
+...
+```
+
+```dockerfile
+# ./docker/mysql/Dockerfile
+
+FROM mysql:9.2.0
+
+ENV MYSQL_HOST mysql
+ENV MYSQL_USER test
+ENV MYSQL_PASSWORD test
+ENV MYSQL_ROOT_PASSWORD root
+ENV MYSQL_DATABASE fastapi
+```
+
+```sql
+# ./docker/mysql/fixtures/schema.sql
+CREATE DATABASE IF NOT EXISTS fastapi;
+
+USE fastapi;
+
+CREATE TABLE IF NOT EXISTS posts (
+    -- Auto-incrementing primary key
+    post_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    
+    -- Foreign key to users table
+    user_id INT UNSIGNED NOT NULL,
+    
+    -- Post title
+    title VARCHAR(254) NOT NULL,
+    
+    -- Timestamps
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,                              -- Set when record is created
+    updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,  -- Auto-updates when record changes
+    
+    -- Indexes
+    PRIMARY KEY (post_id),    -- Primary key for fast lookups
+    KEY (user_id)             -- Index on user_id for faster joins/lookups
+) 
+ENGINE=InnoDB                 -- Transactional storage engine
+DEFAULT CHARSET=utf8mb4       -- Unicode character set
+AUTO_INCREMENT=1;             -- Start auto-increment from 1
+
+-- Samples
+
+INSERT IGNORE INTO posts (post_id, user_id, title) 
+VALUES 
+(1, 5, "Post 1"),
+(3, 3, "Post 2"),
+(4, 2, "Post 3"),
+(2, 4, "Post 4"),
+(5, 1, "Post 5");
+```
+
+```yaml
+# ./docker/docker-compose.yml
+
+services:
+  # service name
+  app:
+    ...
+    
+    # depends on mysql
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    build:
+      context: ./..
+      dockerfile: ./docker/mysql/Dockerfile
+    # MySQL automatically executes all .sql files in this directory during initialization
+    volumes:
+      - ./../docker/mysql/fixtures:/docker-entrypoint-initdb.d
+    healthcheck:
+      # `SELECT 1` is a simple query to verify database is responsive
+      # mysql -utest -ptest fastapi -e 'select 1'
+      # mysql -utest -ptest fastapi -e 'show tables'
+      test: "mysql -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} $${MYSQL_DATABASE} -e 'SELECT 1'"
+      interval: 2s
+      timeout: 15s
+      retries: 15
+    networks:
+      - fastapi-network
+      
+...
+```
+
+Add mysql config into app config. 
+
+```yml
+# ./app/config/default/default.toml
+
+...
+
+# TODO: expose in a secure way
+[databases.mysql]
+host = "mysql"
+port = 3306
+user = "test"
+password = "test"
+dbname = "fastapi"
+```
+
+++ `aiomysql` dep.
+
+```bash
+# ./requirements.txt
+
+...
+
+aiomysql==0.2.0
+```
+
+
+
+### Postgres (TODO)
+
+### SQLite (TODO)
 
 ## Git :package:
 

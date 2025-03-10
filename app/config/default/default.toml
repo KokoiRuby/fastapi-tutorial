@@ -3,3 +3,13 @@ title = "Post Management Service API"
 description = "API to manage posts"
 version = "0.0.1"
 reload = true
+
+# TODO: expose in a secure way
+[databases.mysql]
+host = "mysql"
+port = 3306
+user = "test"
+password = "test"
+dbname = "fastapi"
+
+# [databases.postgres]
