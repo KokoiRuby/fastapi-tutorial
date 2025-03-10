@@ -845,8 +845,8 @@ Core components:
 2. **Ports** are the <u>interfaces</u> that define how external systems communicate with the core logic.
    - **Inbound Ports**: Define how the external world (such as a user interface, API, or message queue) can interact with the core system.
    - **Outbound Ports**: Define how the core system interacts with external systems (such as databases or external APIs) to send or receive data.
-3. **Adapters** are the <u>implementation</u> of the ports.
-4. **Application Services**, also known as Interactors or Use Cases, act as the <u>intermediary</u> between the entities and the external layers
+3. **Adapters** are the <u>implementation</u> of the ports. <u>Adapters use ports to interact with the application.</u>
+4. **Application Services**, also known as <u>Interactors</u> or <u>Use Cases</u>, act as the <u>intermediary</u> between the entities and the external layers
 5. **Repositories** as <u>persistence</u> layer are used to manage the persistence of data.
 6. **Transport Layer** handles the communication between <u>external users</u> or systems and the application.
 7. **External systems** include databases, APIs, message queues, and other <u>infrastructure</u> components
@@ -964,7 +964,9 @@ http get localhost:8000/heartbeat/liveness
 http get localhost:8000/posts
 ```
 
-### Domain models
+### Domain 
+
+#### Models
 
 Use builtin `@dataclass` to avoid dependency on 3PP.
 
@@ -1005,13 +1007,13 @@ class User:
 #### vs.
 
 - **Domain Models**
-  - Represent core business logic and rules
+  - Represent core <u>business logic</u> and rules
   - Used internally in the application
   - More efficient for internal operations
   - <u>Can include business methods and behaviors</u>
   - Independent of API/presentation concerns
-- **Pydantic Schema**
-  - Handle API input/output validation
+- **View Models** (Pydantic Schema)
+  - Handle <u>API input/output</u> validation
   - Manage data serialization/deserialization
   - Document API endpoints (OpenAPI/Swagger)
   - Handle request/response data transformation
@@ -1181,3 +1183,804 @@ class User(BaseModel):
         return email
 ```
 
+#### Repositories
+
+Expose outbound ports to perform data model persistence.
+
+```bash
+.
+├── Makefile
+├── app
+│   ├── __init__.py
+│   ├── application
+│   │   └── __init__.py
+│   ├── config
+│   │   ├── config.py
+│   │   └── default
+│   │       ├── default.toml
+│   │       └── default.yaml
+│   ├── domain
+│   │   ├── __init__.py
+│   │   ├── models
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── post.py
+│   │   │   └── user.py
+│   │   └── repositories # 👈
+│   │       └── __init__.py
+│   ├── entrypoint
+│   │   ├── __init__.py
+│   │   └── fastapi
+│   │       ├── __init__.py
+│   │       ├── __main__.py
+│   │       ├── factory.py
+│   │       ├── routers
+│   │       │   ├── __init__.py
+│   │       │   ├── heatbeat.py
+│   │       │   └── posts.py
+│   │       └── schema
+│   │           ├── __init__.py
+│   │           ├── post.py
+│   │           └── user.py
+│   └── infra
+│       ├── __init__.py
+│       └── persistence
+│           ├── __init__.py
+│           └── mem_db
+│               ├── __init__.py
+│               └── fake_database.py
+├── docker
+│   ├── Dockerfile
+│   └── docker-compose.yml
+└── requirements.txt
+```
+
+Use `@abstractmethod` to define interfaces.
+
+```python
+# ./app/domain/repositories/post.py
+
+from abc import ABC, abstractmethod
+from app.domain.models.post import Post
+
+
+class PostRepository(ABC):
+    @abstractmethod
+    async def create(self, post: Post) -> Post: ...
+
+    @abstractmethod
+    async def get_by_id(self, post_id: int) -> Post: ...
+
+    @abstractmethod
+    async def get_posts(self) -> list[Post]: ...
+
+    @abstractmethod
+    async def update(self, post: Post) -> Post: ...
+
+    @abstractmethod
+    async def delete(self, post_id: int) -> None: ...
+```
+
+```python
+# ./app/domain/repositories/user.py
+
+from abc import ABC, abstractmethod
+from app.domain.models.user import User
+
+
+class UserRepository(ABC):
+    @abstractmethod
+    async def get_by_id(self, user_id: int) -> User: ...
+```
+
+Import repository inside `__init__.py`.
+
+```python
+# ./app/domain/repositories/__init__.py
+
+from app.domain.repositories.post import PostRepository
+from app.domain.repositories.user import UserRepository
+```
+
+#### Application Services
+
+Business logics for use cases which invoke Ports.
+
+```bash
+.
+├── Makefile
+├── app
+│   ├── __init__.py
+│   ├── application  # 👈
+│   │   └── __init__.py
+│   ├── config
+│   │   ├── config.py
+│   │   └── default
+│   │       ├── default.toml
+│   │       └── default.yaml
+│   ├── domain
+│   │   ├── __init__.py
+│   │   ├── models
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── post.py
+│   │   │   └── user.py
+│   │   └── repositories
+│   │       ├── __init__.py
+│   │       ├── post.py
+│   │       └── user.py
+│   ├── entrypoint
+│   │   ├── __init__.py
+│   │   └── fastapi
+│   │       ├── __init__.py
+│   │       ├── __main__.py
+│   │       ├── factory.py
+│   │       ├── routers
+│   │       │   ├── __init__.py
+│   │       │   ├── heatbeat.py
+│   │       │   └── posts.py
+│   │       └── schema
+│   │           ├── __init__.py
+│   │           ├── post.py
+│   │           └── user.py
+│   └── infra
+│       ├── __init__.py
+│       └── persistence
+│           ├── __init__.py
+│           └── mem_db
+│               ├── __init__.py
+│               └── fake_database.py
+├── docker
+│   ├── Dockerfile
+│   └── docker-compose.yml
+└── requirements.txt
+```
+
+Modify models.
+
+```python
+# ./app/domain/models/post.py
+
+...
+
+@dataclass(kw_only=True)
+class Post(BaseModel):
+    post_id: int | None = None
+    ...
+```
+
+```python
+# ./app/domain/models/user.py
+
+@dataclass(kw_only=True)
+class User(BaseModel):
+    ...
+    email: str | None = None
+    ...
+
+    @staticmethod
+    def validate_email(email: str) -> str:
+        if not None and not EMAIL_REGEX.match(email):
+            ...
+```
+
+Service.
+
+```python
+# ./app/application/post_service.py
+
+from app.domain.models.post import Post
+from app.domain.repositories import PostRepository, UserRepository
+
+
+class PostService:
+    def __init__(self, post_repository: PostRepository, user_repository: UserRepository):
+        self.post_repository = post_repository
+        self.user_repository = user_repository
+
+    async def create_post(self, user_id: int, title: str) -> Post:
+        if not (user := await self.user_repository.get_by_id(user_id)):
+            raise Exception("User not found")
+
+        post = Post(title=title, user=user)
+        return await self.post_repository.create(post)
+
+    async def get_post(self, post_id: int) -> Post:
+        if not (post := await self.post_repository.get_by_id(post_id)):
+            raise Exception("Post not found")
+
+        # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
+        assert post.user
+        if not (user := await self.user_repository.get_by_id(post.user.user_id)):
+            raise Exception("User not found")
+
+        post.user = user
+
+        return post
+
+    # TODO: pagination
+    async def list_posts(self) -> list[Post]:
+        posts = await self.post_repository.get_posts()
+
+        for post in posts:
+            # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
+            assert post.user
+            post.user = await self.user_repository.get_by_id(post.user.user_id)
+
+        return posts
+
+    async def update_post(self, post_id: int, title: str, user_id: int) -> Post:
+        if not (post := await self.post_repository.get_by_id(post_id)):
+            raise Exception("Post not found")
+
+        # AuthZ
+        # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
+        assert post.user
+        if post.user.user_id != user_id:
+            raise Exception("User not authorized")
+
+        # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
+        assert post.user
+        if not (user := await self.user_repository.get_by_id(post.user.user_id)):
+            raise Exception("User not found")
+
+        post.title = title
+        post = await self.post_repository.update(post)
+        post.user = user
+        return post
+
+    async def delete_post(self, post_id: int) -> None:
+        await self.post_repository.delete(post_id)
+
+```
+
+#### TODO: CQRS :confused:
+
+### Infra
+
+#### Repostiroies
+
+The application does not care about how data is persisted in what kind format, as long as adapter returns a domain model that fits in the application layer. **Infra repositories implements interfaces defined in domain.**
+
+```bash
+➜  Fastapi git:(dev) ✗ tree
+.
+├── Makefile
+├── app
+│   ├── __init__.py
+│   ├── application
+│   │   ├── __init__.py
+│   │   └── post_service.py
+│   ├── config
+│   │   ├── config.py
+│   │   └── default
+│   │       ├── default.toml
+│   │       └── default.yaml
+│   ├── domain
+│   │   ├── __init__.py
+│   │   ├── models
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py
+│   │   │   ├── post.py
+│   │   │   └── user.py
+│   │   └── repositories
+│   │       ├── __init__.py
+│   │       ├── post.py
+│   │       └── user.py
+│   ├── entrypoint
+│   │   ├── __init__.py
+│   │   └── fastapi
+│   │       ├── __init__.py
+│   │       ├── __main__.py
+│   │       ├── factory.py
+│   │       ├── routers
+│   │       │   ├── __init__.py
+│   │       │   ├── heatbeat.py
+│   │       │   └── posts.py
+│   │       └── schema
+│   │           ├── __init__.py
+│   │           ├── post.py
+│   │           └── user.py
+│   └── infra
+│       ├── __init__.py
+│       ├── persistence
+│       │   ├── __init__.py
+│       │   └── mem_db
+│       │       ├── __init__.py
+│       │       └── fake_database.py
+│       └── repositories # 👈
+│           ├── __init__.py
+│           ├── post
+│           │   ├── MemoryPostRepository.py
+│           │   └── __init__.py
+│           └── user
+│               ├── MemoryUserRepository.py
+│               └── __init__.py
+├── docker
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── note.md
+└── requirements.txt
+```
+
+```bash
+# ./app/infra/repositories/post/MemoryPostRepository.py
+
+from app.infra.persistence.mem_db.fake_database import FakeDatabase
+from app.domain.repositories import PostRepository
+from app.domain.models.post import Post
+from app.domain.models.user import User
+
+
+# subclassing PostRepository
+class MeoryPostRepository(PostRepository):
+    def __init__(self, database: FakeDatabase) -> None:
+        self.database = database
+
+    async def create(self, post: Post) -> Post:
+        # serialize (from domain model to dict)
+        post_data = self._serialize(post)
+        # persist
+        self.database.posts[post_data["post_id"]] = post_data
+        # update id and return
+        post.post_id = post_data["post_id"]
+        return post
+
+    async def get_by_id(self, post_id: int) -> Post | None:
+        if not (post_data := self.database.posts.get(post_id)):
+            return None
+
+        # deserialize (from dict to domain model) and return
+        return self._build_post_model(post_data)
+
+    async def get_posts(self) -> list[Post]:
+        # iter + deserialize (from dict to domain model) and return
+        return [self._build_post_model(post_data) for post_data in self.database.posts.values()]
+
+    async def update(self, post: Post) -> Post:
+        # return if nothing to update
+        if not post.modified_fields:
+            return post
+        # otherwise partial update
+        self.database.posts[post.post_id].update(
+            self._serialize(post, partial=True))
+        return post
+
+    async def delete(self, post_id: int) -> None:
+        try:
+            self.database.posts.pop(post_id)
+        except KeyError:
+            return None
+
+    def _serialize(self, post: Post, partial: bool = False) -> dict:
+        # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
+        assert post.user
+        if not partial:
+            return {
+                "post_id": post.post_id or self._generate_id(),
+                "title": post.title,
+                "created": post.created,
+                "update": post.update,
+                "user_id": post.user.user_id,
+            }
+        else:
+            data = {}
+            modified_fields = post.modified_fields
+            for field in modified_fields:
+                match field:
+                    case "title":
+                        data["title"] = post.title
+                    case _:
+                        ...
+
+            return data
+
+    def _generate_id(self) -> int:
+        return len(self.database.posts) + 1
+
+    def _build_post_model(self, post_data: dict) -> Post:
+        return Post(
+            post_id=post_data["post_id"],
+            title=post_data["title"],
+            created=post_data["created"],
+            update=post_data["update"],
+            user=User(
+                user_id=post_data["user_id"],
+            )
+        )
+```
+
+```python
+# ./app/infra/repositories/post/MemoryUserRepository.py
+
+from app.infra.persistence.mem_db.fake_database import FakeDatabase
+from app.domain.repositories import UserRepository
+from app.domain.models.user import User
+
+
+# subclassing UserRepository
+class MemoryUserRepository(UserRepository):
+    def __init__(self, database: FakeDatabase):
+        self.database = database
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        # get user from db
+        if not (user_data := self.database.users.get(user_id)):
+            return None
+
+        # deserialize user (to domain model)
+        return self._to_user_model(user_data)
+
+    def _to_user_model(self, user_data: dict) -> User:
+        return User(**user_data)
+```
+
+### DIC
+
+Dependency Injection Container for orchestration (groups services) as **Inbound Adatpter**.
+
+```python
+# ./app/application/dic.py
+
+from dataclasses import dataclass
+from app.application.post_service import PostService
+
+# expose
+__all__ = ("DIC", )
+
+
+@dataclass(kw_only=True)
+class DependencyInjectionContainer:
+    post_service: PostService | None = None
+
+DIC = DependencyInjectionContainer()
+```
+
+Startup in `__init__.py`. Injection flow: Databse 👉 Repositories 👉 Service.
+
+```python
+# ./app/application/__init__.py
+
+from app.application.dic import DIC
+from app.infra.repositories import MemoryUserRepository, MeoryPostRepository
+from app.infra.persistence.mem_db.fake_database import fake_database
+from app.application.post_service import PostService
+
+
+async def application_startup():
+    user_repository = MemoryUserRepository(database=fake_database)
+    post_repository = MeoryPostRepository(database=fake_database)
+
+    DIC.post_service = PostService(
+        post_repository=post_repository,
+        user_repository=user_repository,
+    )
+```
+
+++ to application lifespan.
+
+```python
+# ./app/entrypoint/fastapi/factory.py
+
+...
+
+from app.application import application_startup
+
+...
+
+def create_app() -> FastAPI:
+
+    async def on_startup(app: FastAPI) -> None:
+        print("Starting up")
+        await application_startup()
+        
+    ...
+```
+
+#### Exception
+
+Inbound adapter is responsible for capturing domain exceptions raised from application services.
+
+Base domain exception.
+
+```python
+# ./app/domain/exceptions.py
+from typing import ParamSpec
+
+P = ParamSpec("P")
+
+
+class DomainException(Exception):
+
+    TYPE = "internal_server_error"
+    MESSAGE = "Internal Server Error"
+
+    def __init__(self, message: str | None = None, *args: P.args, **kwargs: P.kwargs):
+        self._message = message
+        self._kwargs = kwargs
+        super().__init__(message)
+
+    @property
+    def message(self) -> str:
+        return self._message or self.MESSAGE.format(**self._kwargs)
+
+    def __str__(self):
+        return self.message
+    
+    
+class InvalidFieldValue(DomainException):
+    TYPE = "invalid_field_value"
+    MESSAGE = "Invalid value {field_value} for field {field_name}"
+    
+    
+class UserNotFound(DomainException):
+    TYPE = "user_not_found"
+    MESSAGE = "User {user_id} not found"
+
+
+class PostNotFound(DomainException):
+    TYPE = "post_not_found"
+    MESSAGE = "Post {post_id} not found"
+    
+    
+class Forbiden(DomainException):
+    TYPE = "forbidden"
+    MESSAGE = "Access Forbidden"
+```
+
+Update the exception in domain model.
+
+```python
+# ./app/domain/models/post.py
+
+...
+from app.domain.exceptions import InvalidFieldValue
+
+
+@dataclass(kw_only=True)
+class Post(BaseModel):
+    ...
+
+    @staticmethod
+    def validate_title(title: str) -> str:
+        if len(title.strip()) == 0:
+            raise InvalidFieldValue(field_name="title", field_value=title)
+        return title.strip()
+```
+
+```python
+# ./app/domain/models/user.py
+
+...
+from app.domain.exceptions import InvalidFieldValue
+
+
+@dataclass(kw_only=True)
+class User(BaseModel):
+    ...
+
+    @staticmethod
+    def validate_email(email: str) -> str:
+        if not None and not EMAIL_REGEX.match(email):
+            raise InvalidFieldValue(field_name="email", field_value=email)
+        return email
+```
+
+Update the exceptions in application service.
+
+```python
+# ./app/application/post_service.py
+
+...
+
+from app.domain.exceptions import UserNotFound, PageNotFound, Forbiden
+
+class PostService:
+    ...
+
+    async def create_post(self, user_id: int, title: str) -> Post:
+        if not (user := await self.user_repository.get_by_id(user_id)):
+            raise UserNotFound(user_id=user_id)
+    
+    ...
+```
+
+Expose API by injecting DIC in FastAPI router. Injection flow: Databse 👉 Repositories 👉 Service 👉 API Router.
+
+Capture domain exceptions in FastAPI router.
+
+```python
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
+# from app.infra.persistence.mem_db.fake_database import fake_database
+from app.entrypoint.fastapi.schema.post import Post, PostCreateInput, PostUpdateInput
+from app.entrypoint.fastapi.schema.user import User
+from starlette.exceptions import HTTPException
+from app.application.dic import DIC
+from app.domain.models.post import Post as PostModel
+from app.domain.models.user import User as UserModel
+from app.domain.exceptions import UserNotFound, PostNotFound, InvalidFieldValue, Forbiden
+
+# expose
+__all__ = ("router", )
+
+router = APIRouter(
+    prefix="/posts",
+    tags=["posts"]
+)
+
+
+@router.get(
+    "",
+    description="Get all posts",
+    response_model=list[Post],
+    status_code=status.HTTP_200_OK,
+)
+async def list_posts() -> list[Post]:
+    assert DIC.post_service
+    posts: list[PostModel] = await DIC.post_service.list_posts()
+    return [to_post_view_model(post) for post in posts]
+
+
+@router.get(
+    "/{post_id}",
+    description="Get a post",
+    response_model=Post,
+    status_code=status.HTTP_200_OK,
+)
+async def get_post(post_id: int) -> Post:
+    try:
+        assert DIC.post_service
+        post: PostModel = await DIC.post_service.get_post(post_id)
+        return to_post_view_model(post)
+    except (PostNotFound, UserNotFound) as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error"
+        )
+
+
+@router.post(
+    "",
+    description="Create a post",
+    response_model=Post,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_post(input_post: PostCreateInput) -> Post:
+    try:
+        assert DIC.post_service
+        post: PostModel = await DIC.post_service.create_post(
+            user_id=input_post.user_id,
+            title=input_post.title
+        )
+        return to_post_view_model(post)
+    except (UserNotFound, InvalidFieldValue) as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error"
+        )
+
+
+@router.patch(
+    "/{post_id}",
+    description="Update a post",
+    response_model=Post,
+    status_code=status.HTTP_200_OK,
+)
+async def update_post(post_id: int, update_post: PostUpdateInput) -> Post:
+    try:
+        assert DIC.post_service
+        post: PostModel = await DIC.post_service.update_post(
+            post_id=post_id,
+            title=update_post.title,
+            user_id=update_post.user_id
+        )
+        return to_post_view_model(post)
+    except Forbiden as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except (PostNotFound, UserNotFound) as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal Server Error"
+        )
+
+
+@router.delete(
+    "/{post_id}",
+    description="Delete a post",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_post(post_id: int) -> None:
+    assert DIC.post_service
+    await DIC.post_service.delete_post(post_id)
+
+
+def to_post_view_model(post: PostModel) -> Post:
+    assert post.user
+    return Post(
+        post_id=post.post_id,
+        title=post.title,
+        created=post.created,
+        user=to_user_view_model(post.user)
+    )
+
+
+def to_user_view_model(user: UserModel) -> User:
+    return User(
+        user_id=user.user_id,
+        email=user.email,
+        created=user.created
+    )
+
+```
+
+
+
+## Git :package:
+
+1. First, create your initial commit if you haven't already:
+```bash
+git add .
+git commit -m "Initial commit"
+```
+
+2. Create and switch to the main branch:
+```bash
+git branch -M main
+```
+
+3. Now you can create your development branch:
+```bash
+git checkout -b dev
+```
+
+If you're connecting to a remote repository, you can then:
+
+```bash
+git push -u origin main
+```
+
+5. Switch and continue to farm on dev branch:
+
+```bash
+git add .
+git commit -m "your commit message"
+```
+
+6. To merge to main:
+
+```bash
+git checkout main
+git merge dev
+git push origin main
+```
+
+7. Back to dev:
+
+```bash
+git checkout dev
+```
+
+If you need to update remote dev branch:
+
+```bash
+git push origin dev
+```

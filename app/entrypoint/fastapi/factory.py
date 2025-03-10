@@ -3,6 +3,9 @@ from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from app.entrypoint.fastapi.routers import routers
 from app.config.config import config
+from app.application import application_startup
+
+
 __all__ = ("create_app", )
 
 
@@ -10,6 +13,7 @@ def create_app() -> FastAPI:
 
     async def on_startup(app: FastAPI) -> None:
         print("Starting up")
+        await application_startup()
 
     async def on_shutdown(app: FastAPI) -> None:
         print("Shutting down")
