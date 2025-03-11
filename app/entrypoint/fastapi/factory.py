@@ -4,6 +4,7 @@ from fastapi.concurrency import asynccontextmanager
 from app.entrypoint.fastapi.routers import routers
 from app.config.config import config
 from app.application import application_startup, application_shutdown
+from app.entrypoint.fastapi.exceptions import setup_exceptions_handler
 
 
 __all__ = ("create_app", )
@@ -36,5 +37,7 @@ def create_app() -> FastAPI:
 
     for router in routers:
         app.include_router(router)
+
+    setup_exceptions_handler(app)
 
     return app

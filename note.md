@@ -2403,6 +2403,107 @@ async def liveness() -> JSONResponse:
 
 ### SQLite (TODO)
 
+## Graceful Exception
+
+Consolidate domain exceptions in entrypoint, and routers just raise them.
+
+```bash
+# 
+.
+...
+│   ├── entrypoint
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   │   └── __init__.cpython-312.pyc
+│   │   └── fastapi
+│   │       ├── __init__.py
+│   │       ├── __main__.py
+│   │       ├── __pycache__
+│   │       │   ├── __init__.cpython-312.pyc
+│   │       │   ├── __main__.cpython-312.pyc
+│   │       │   └── factory.cpython-312.pyc
+│   │       ├── exceptions.py # 👈
+│   │       ├── factory.py
+...
+```
+
+Both domain exceptions and non-domain exceptions will be handled by fastapi [exception handler](https://fastapi.tiangolo.com/tutorial/handling-errors/#install-custom-exception-handlers).
+
+```python
+# ./app/entrypoint/fastapi/exceptions.py
+
+from typing import Type
+from app.domain import exceptions as domain_exceptions
+from fastapi import status, FastAPI
+from fastapi.responses import ORJSONResponse
+
+
+# type alias
+DomainExceptionType = Type[domain_exceptions.DomainException]
+
+# map domain exception to http status code
+EXCEPTION_STATUS_MAPPING: dict[DomainExceptionType, int] = {
+    domain_exceptions.UserNotFound: status.HTTP_404_NOT_FOUND,
+    domain_exceptions.PostNotFound: status.HTTP_404_NOT_FOUND,
+    domain_exceptions.InvalidFieldValue: status.HTTP_400_BAD_REQUEST,
+    domain_exceptions.Forbiden: status.HTTP_403_FORBIDDEN,
+}
+
+
+# exec when exception is captured
+# https://fastapi.tiangolo.com/tutorial/handling-errors/#install-custom-exception-handlers
+def setup_exceptions_handler(app: FastAPI) -> None:
+    @app.exception_handler(domain_exceptions.DomainException)
+    # https://fastapi.tiangolo.com/advanced/custom-response/#ujsonresponse
+    def domain_exception_handler(_, exception: domain_exceptions.DomainException) -> ORJSONResponse:
+        return ORJSONResponse(
+            content={
+                "error": exception.message,
+                "type": exception.TYPE
+            },
+            status_code=EXCEPTION_STATUS_MAPPING.get(
+                type(exception), status.HTTP_500_INTERNAL_SERVER_ERROR)
+        )
+
+    @app.exception_handler(Exception)
+    def non_domain_exception_handler(_, exception: Exception) -> ORJSONResponse:
+        # TODO
+        # logger.error(exception)
+
+        return ORJSONResponse(
+            content={
+                "error": str(exception),
+                "type": "internal_server_error",
+            },
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+```
+
+Setup exception handler in fastapi factory.
+
+```python
+# ./app/entrypoint/fastapi/factory.py
+
+...
+
+from app.entrypoint.fastapi.exceptions import setup_exceptions_handler
+
+
+def create_app() -> FastAPI:
+	...
+	setup_exceptions_handler(app)
+
+    return app
+```
+
+Remove exception handling in routers. Just need to keep the codes within try block.
+
+```python
+# ./app/entrypoint/fastapi/routers/posts.py
+
+...
+```
+
 ## Git :package:
 
 1. First, create your initial commit if you haven't already:

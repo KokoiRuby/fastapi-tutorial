@@ -8,7 +8,7 @@ class DomainException(Exception):
     TYPE = "internal_server_error"
     MESSAGE = "Internal Server Error"
 
-    def __init__(self, message: str | None = None, *args: P.args, **kwargs: P.kwargs):
+    def __init__(self, message: str | None = None, **kwargs: P.kwargs):
         self._message = message
         self._kwargs = kwargs
         super().__init__(message)

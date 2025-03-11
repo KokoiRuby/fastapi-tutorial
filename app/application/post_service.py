@@ -19,7 +19,7 @@ class PostService:
     async def get_post(self, post_id: int) -> Post:
         if not (post := await self.post_repository.get_by_id(post_id)):
             # raise Exception("Post not found")
-            raise PostNotFound(page_id=post_id)
+            raise PostNotFound(post_id=post_id)
 
         # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
         assert post.user
@@ -45,7 +45,7 @@ class PostService:
     async def update_post(self, post_id: int, title: str, user_id: int) -> Post:
         if not (post := await self.post_repository.get_by_id(post_id)):
             # raise Exception("Post not found")
-            raise PostNotFound(page_id=post_id)
+            raise PostNotFound(post_id=post_id)
 
         # AuthZ
         # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
