@@ -25,4 +25,3 @@ CREATE TABLE IF NOT EXISTS posts (
 ENGINE=InnoDB                 -- Transactional storage engine
 DEFAULT CHARSET=utf8mb4       -- Unicode character set
 AUTO_INCREMENT=1;             -- Start auto-increment from 1
-

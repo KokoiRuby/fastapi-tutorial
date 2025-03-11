@@ -34,6 +34,7 @@ services:
       # `SELECT 1` is a simple query to verify database is responsive
       # mysql -utest -ptest fastapi -e 'select 1'
       # mysql -utest -ptest fastapi -e 'show tables'
+      # mysql -utest -ptest fastapi -e 'select * from posts'
       test: "mysql -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} $${MYSQL_DATABASE} -e 'SELECT 1'"
       interval: 2s
       timeout: 15s

@@ -2060,7 +2060,344 @@ dbname = "fastapi"
 aiomysql==0.2.0
 ```
 
+Add mysql database to persistence.
 
+```bash
+.
+...
+│   └── infra
+│       ├── __init__.py
+│       ├── __pycache__
+│       │   └── __init__.cpython-312.pyc
+│       ├── persistence # 👈
+│       │   ├── __init__.py
+...
+│       │   ├── mysql
+│       │   │   └── __init__.py
+│       │   ├── postgres
+│       │   │   └── __init__.py
+│       │   └── sqlite
+│       │       └── __init__.py
+...
+```
+
+```python
+# ./app/infra/persistence/mysql/database.py
+
+import aiomysql  # type: ignore
+
+
+# explose
+__all__ = ('Database', )
+
+
+class Database:
+
+    def __init__(
+        self,
+        host: str,
+        user: str,
+        password: str,
+        dbname: str,
+        autocommit: bool = True,
+        port: int = 3306,
+        pool_minsize=1,
+        pool_maxsize=10,
+        pool_recycle=60,
+        charset='utf-8',
+        wait_timeout=30,
+    ):
+        self._host = host
+        self._user = user
+        self._password = password
+        self._dbname = dbname
+        self._autocommit = autocommit
+        self._port = port
+        self._pool_minsize = pool_minsize
+        self._pool_maxsize = pool_maxsize
+        self._pool_recycle = pool_recycle
+        self._charset = charset
+        self._wait_timeout = wait_timeout
+        self.pool = None
+
+    async def connect(self):
+        self.pool = await aiomysql.create_pool(
+            host=self._host,
+            user=self._user,
+            password=self._password,
+            db=self._dbname,
+            autocommit=self._autocommit,
+            port=self._port,
+            minsize=self._pool_minsize,
+            maxsize=self._pool_maxsize,
+            pool_recycle=self.pool_recycle,
+            connect_timout=1,
+            cursorclass=aiomysql.DictCursor,  # returns rows as dict
+            init_command=f"SET wait_timeout={self._wait_timeout}",
+        )
+
+    async def check_connection(self):
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as conn:
+                await conn.ping(reconnect=True)  # reconnect if no pong back
+
+    async def init_connection(self):
+        try:
+            await self.connect()
+            await self.check_connection()
+        except Exception:
+            raise
+
+    async def close(self):
+        if self.pool:
+            self.pool.terminate()
+            await self.pool.wait_closed()
+            self.pool = None
+
+```
+
+Add mysql repository.
+
+```python
+# ./app/infra/repositories/post/MySQLPostRepository.py
+
+from app.infra.persistence.mysql.database import Database
+from app.domain.repositories import PostRepository
+from app.domain.models.post import Post
+from app.domain.models.user import User
+
+
+# subclassing PostRepository
+class MySQLPostRepository(PostRepository):
+    def __init__(self, database: Database) -> None:
+        self.connection_pool = database.pool  # get pool from database
+
+    async def create(self, post: Post) -> Post:
+        assert self.connection_pool
+        async with self.connection_pool.acquire() as conn:  # get connection from pool
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    query="INSERT INTO posts (post_id, title, created, updated, user_id) VALUES (%s, %s, %s, %s, %s)",
+                    args=(
+                        post.post_id,
+                        post.title,
+                        post.created,
+                        post.updated,
+                        post.user.user_id,
+                    ),
+                )
+                post.post_id = cur.lastrowid
+        return post
+
+    async def get_by_id(self, post_id: int) -> Post | None:
+        assert self.connection_pool
+        async with self.connection_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    query="SELECT post_id, title, created, updated, user_id FROM posts WHERE post_id = %s",
+                    args=(post_id,),
+                )
+                post_data = await cur.fetchone()
+
+        # deserialize (from dict to domain model) and return
+        return self._build_post_model(post_data) if post_data else None
+
+    async def get_posts(self) -> list[Post]:
+        assert self.connection_pool
+        async with self.connection_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    query="SELECT post_id, title, created, updated, user_id FROM posts"
+                )
+                posts = await cur.fetchall()
+
+        # iter + deserialize (from dict to domain model) and return
+        return [self._build_post_model(post_data) for post_data in posts]
+
+    async def update(self, post: Post) -> Post:
+        # return a empty dict if no fields are updated
+        if not (modified_fields := self._serialize(post=post, partial=True)):
+            return post
+
+        assert self.connection_pool
+        async with self.connection_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    query=f"UPDATE posts SET {', '.join(f'{key} = %s' for key in modified_fields.keys(
+                    ))}",
+                    args=tuple(modified_fields.values()),
+                )
+
+        return post
+
+    async def delete(self, post_id: int) -> None:
+        assert self.connection_pool
+        async with self.connection_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    query="DELETE FROM posts WHERE post_id = %s",
+                    args=(post_id,),
+                )
+            return None
+
+    @staticmethod
+    def _serialize(post: Post, partial: bool = False) -> dict:
+        # https://mypy.readthedocs.io/en/latest/error_code_list.html#code-union-attr
+        assert post.user
+        if not partial:
+            return {
+                "post_id": post.post_id,
+                "title": post.title,
+                "created": post.created,
+                "updated": post.updated,
+                "user_id": post.user.user_id,
+            }
+        else:
+            data = {}
+            modified_fields = post.modified_fields
+            for field in modified_fields:
+                match field:
+                    case "title":
+                        data["title"] = post.title
+                    case _:
+                        ...
+
+            return data
+
+    def _build_post_model(self, post_data: dict) -> Post:
+        return Post(
+            post_id=post_data["post_id"],
+            title=post_data["title"],
+            created=post_data["created"],
+            updated=post_data["updated"],
+            user=User(
+                user_id=post_data["user_id"],
+            )
+        )
+```
+
+++ into repositories `__init__.py`.
+
+```python
+# ./app/infra/repositories/__init__.py
+
+...
+
+from app.infra.repositories.post.MemoryPostRepository import (
+    MeoryPostRepository,
+)
+```
+
+Replace mem db to mysql in on application startup.
+
+```python
+# ./app/application/__init__.py
+
+...
+
+from app.infra.repositories import MemoryUserRepository, MeoryPostRepository, MySQLPostRepository
+from app.infra.persistence.mysql.database import Database
+from app.config.config import config
+
+
+async def application_startup():
+    # load conf and init db
+    my_sql_conf = config["databases"]["mysql"]
+    mysql_db = Database(
+        host=my_sql_conf["host"],
+        port=my_sql_conf["port"],
+        user=my_sql_conf["user"],
+        password=my_sql_conf["password"],
+        dbname=my_sql_conf["dbname"],
+    )
+    await mysql_db.init_connection()
+
+    # mem db
+    user_repository = MemoryUserRepository(database=fake_database)
+    # post_repository = MeoryPostRepository(database=fake_database)
+    post_repository = MySQLPostRepository(database=mysql_db)
+
+...
+```
+
+Disconnect mysql db during app shutdown.
+
+```python
+# ./app/application/dic.py
+
+...
+
+from app.infra.persistence.mysql.database import Database
+
+...
+
+@dataclass(kw_only=True)
+class DependencyInjectionContainer:
+    post_service: PostService | None = None
+    mysql_db: Database | None = None
+
+...
+```
+
+```python
+# ./app/application/__init__.py
+
+...
+
+async def application_startup():
+    ...
+
+    DIC.mysql_db = mysql_db
+
+async def application_shutdown():
+    if DIC.mysql_db:
+        await DIC.mysql_db.close()
+
+
+async def application_health_check():
+    await DIC.mysql_db.check_connection()
+```
+
+Add to lifespan.
+
+```python
+# ./app/entrypoint/fastapi/factory.py
+
+...
+
+from app.application import application_startup, application_shutdown
+
+...
+
+def create_app() -> FastAPI:
+
+    ...
+
+    async def on_shutdown(app: FastAPI) -> None:
+        print("Shutting down")
+        await application_shutdown()
+        
+...
+```
+
+Add db health check to heatbeat.
+
+```python
+# ./app/entrypoint/fastapi/routers/heatbeat.py
+
+...
+
+from app.application import application_health_check
+
+...
+
+@router.get("/liveness", status_code=status.HTTP_200_OK)
+async def liveness() -> JSONResponse:
+    await application_health_check()
+    return JSONResponse({
+        "status": "alive"
+    })
+```
 
 ### Postgres (TODO)
 

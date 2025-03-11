@@ -22,7 +22,7 @@ class FakeDatabase:
                 "created": datetime.utcnow(),
                 "updated": datetime.utcnow(),
             }
-            for user_id in range(1, 4)
+            for user_id in range(1, 6)
         }
         self.posts = {
             post_id: {
